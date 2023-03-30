@@ -1,4 +1,4 @@
-Shader "Unlit/DrawShader"
+Shader "Tools/TexturePainter/3DViewPreview"
 {
     Properties
     {
