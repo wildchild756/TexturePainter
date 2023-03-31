@@ -23,6 +23,7 @@ public class TexturePainter : EditorWindow
     private Material quadMat;
     private float currentScale = 1f;
     private TexturePainterStage stage;
+    private ToolbarToggle paintToggleField;
 
     [MenuItem("Tools/Texture Painter")]
     public static void InitWindow()
@@ -160,11 +161,48 @@ public class TexturePainter : EditorWindow
         stage = new TexturePainterStage(targetMesh);
         stage.editorWindow = this;
         stage.GoToStage(ref previewMat, ref targetRT);
+        
+        DrawSceneGUI();
     }
 
     private void DisablePaintMode()
     {
+        CleanSceneGUI();
+        
         StageUtility.GoBackToPreviousStage();
+
+    }
+
+    private void DrawSceneGUI()
+    {
+        SceneView sceneview = SceneView.lastActiveSceneView;
+        var root = sceneview.rootVisualElement;
+        
+        paintToggleField = new ToolbarToggle()
+        {
+            text = "Paint"
+        };
+        paintToggleField.RegisterValueChangedCallback((e)=>
+        {
+            if(e.newValue)
+            {
+                StartPaint();
+            }
+            else
+            {
+                EndPaint();
+            }
+        });
+
+        root.Add(paintToggleField);
+    }
+
+    private void CleanSceneGUI()
+    {
+        SceneView sceneview = SceneView.lastActiveSceneView;
+        var root = sceneview.rootVisualElement;
+
+        root.Remove(paintToggleField);
     }
 
     private void CameraControl(ref Camera cam, Rect rect, ref float scale)
@@ -226,5 +264,15 @@ public class TexturePainter : EditorWindow
         GameObject.DestroyImmediate(gameObject);
 
         return mesh;
+    }
+
+    private void StartPaint()
+    {
+        Debug.Log("Start Paint");
+    }
+
+    private void EndPaint()
+    {
+        Debug.Log("End Paint");
     }
 }

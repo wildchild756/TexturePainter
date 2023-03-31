@@ -31,6 +31,7 @@ public class TexturePainterStage : PreviewSceneStage
         var meshRenderer = targetObj.AddComponent<MeshRenderer>();
         meshRenderer.sharedMaterial = mat;
         meshRenderer.sharedMaterial.SetTexture("_MainTex", targetRT);
+        // targetObj.AddComponent<TexturePainterTarget>();
         StageUtility.PlaceGameObjectInCurrentStage(targetObj);
     }
 
