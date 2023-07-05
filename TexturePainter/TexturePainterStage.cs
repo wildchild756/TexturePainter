@@ -8,8 +8,10 @@ using UnityEditor.SceneManagement;
 public class TexturePainterStage : PreviewSceneStage
 {
     public Mesh mesh;
-    public GameObject targetObj;
     public TexturePainter editorWindow;
+    public bool isInStage = false;
+
+    private GameObject targetObj;
 
     public TexturePainterStage(Mesh mesh)
     {
@@ -22,6 +24,7 @@ public class TexturePainterStage : PreviewSceneStage
     public void GoToStage(ref Material mat, ref RenderTexture targetRT)
     {
         StageUtility.GoToStage(this, true);
+        isInStage = true;
         targetObj = new GameObject(mesh.name);
         targetObj.transform.position = Vector3.zero;
         targetObj.transform.rotation = Quaternion.identity;
@@ -43,6 +46,7 @@ public class TexturePainterStage : PreviewSceneStage
     protected override void OnCloseStage()
     {
         base.OnCloseStage();
+        isInStage = false;
         DestroyImmediate(targetObj);
         editorWindow.ResetPaintModeFieldValue(false);
     }

@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.UIElements;
 using UnityEditor;
 using UnityEditor.UIElements;
@@ -10,20 +11,26 @@ public class TexturePainter : EditorWindow
 {
     Texture2D targetTex;
     Mesh targetMesh;
+    GameObject targetGameObject;
     RenderTexture targetRT;
     Material previewMat;
     Shader previewShader;
+    Material paintMat;
+    Shader paintShader;
 
     private static PreviewRenderUtility previewRenderUtility;
 
+    private TexturePainterStage stage;
     private ObjectField targetTexField;
     private ToolbarToggle paintModeField;
     private IMGUIContainer viewField;
     private Texture viewImage;
     private Material quadMat;
     private float currentScale = 1f;
-    private TexturePainterStage stage;
     private ToolbarToggle paintToggleField;
+    private Texture2D[] brushesTex;
+    private string[] brushName;
+    private RaycastHit paintHit;
 
     [MenuItem("Tools/Texture Painter")]
     public static void InitWindow()
@@ -55,7 +62,7 @@ public class TexturePainter : EditorWindow
         targetTexField.RegisterValueChangedCallback((e)=>
         {
             targetTex = (Texture2D)e.newValue;
-            Refresh();
+            RefreshTargetRT();
         });
 
         paintModeField = new ToolbarToggle()
@@ -95,6 +102,11 @@ public class TexturePainter : EditorWindow
         previewRenderUtility.Cleanup();
     }
 
+    void OnSelectionChange()
+    {
+        RefreshTargetMesh();
+    }
+
     public void OnInspectorUpdate()
     {
         viewField.MarkDirtyRepaint();
@@ -107,16 +119,24 @@ public class TexturePainter : EditorWindow
 
     private void SetUp()
     {
+        LoadBrushes();
+
         targetTex = Texture2D.whiteTexture;
-        targetMesh = GetPrimitiveMesh(PrimitiveType.Cube);
+        // targetGameObject = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        // if(targetGameObject.TryGetComponent<MeshFilter>(out MeshFilter filter))
+        // {
+        //     targetMesh = filter.sharedMesh;
+        // }
         previewShader = Shader.Find("Tools/TexturePainter/3DViewPreview");
         previewMat = new Material(previewShader);
+        paintShader = Shader.Find("Tools/TexturePainter/Paint");
+        paintMat = new Material(paintShader);
         previewMat.SetTexture("_MainTex", targetRT);
         viewImage = Texture2D.whiteTexture;
         quadMat = new Material(Shader.Find("Unlit/Texture"));
     }
 
-    private void Refresh()
+    private void RefreshTargetRT()
     {
         if(targetTex != null)
         {
@@ -127,13 +147,33 @@ public class TexturePainter : EditorWindow
         }
     }
 
+    private void RefreshTargetMesh()
+    {
+        if(Selection.activeGameObject == null)
+        {
+            Debug.Log("No Selection");
+        }
+        else
+        {
+            GameObject seleciton = Selection.activeGameObject;
+            if(seleciton.TryGetComponent<MeshFilter>(out MeshFilter meshFilter))
+            {
+                targetGameObject = seleciton;
+                if(targetMesh != meshFilter.sharedMesh)
+                {
+                    targetMesh = meshFilter.sharedMesh;
+                }
+            }
+        }
+    }
+
     private void Update2DView()
     {
         quadMat.SetTexture("_MainTex", targetRT);
-        Mesh quad = GetPrimitiveMesh(PrimitiveType.Quad);
         Rect rect = new Rect(0, 0, 512, 512);
+        Mesh quad = GetPrimitiveMesh(PrimitiveType.Quad);
         Camera cam = previewRenderUtility.camera;
-        CameraControl(ref cam, rect, ref currentScale);
+        InteractiveControl(ref cam, rect, ref currentScale);
         previewRenderUtility.BeginPreview(rect, GUIStyle.none);
         previewRenderUtility.DrawMesh(quad, Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(currentScale, currentScale, currentScale)), quadMat, 0);
         previewRenderUtility.camera.Render();
@@ -144,57 +184,39 @@ public class TexturePainter : EditorWindow
 
     private void EnablePaintMode()
     {
-        if(Selection.activeGameObject == null)
+        if(targetGameObject != null && targetMesh != null)
         {
-            Debug.Log("No Selection");
+            stage = ScriptableObject.CreateInstance<TexturePainterStage>();
+            stage.mesh = targetMesh;
+            stage.editorWindow = this;
+            stage.GoToStage(ref previewMat, ref targetRT);
         }
         else
         {
-            GameObject seleciton = Selection.activeGameObject;
-            MeshFilter meshFilter;
-            if(seleciton.TryGetComponent<MeshFilter>(out meshFilter))
-            {
-                targetMesh = meshFilter.sharedMesh;
-            }
-
+            Debug.Log("No Selection");
         }
-        stage = new TexturePainterStage(targetMesh);
-        stage.editorWindow = this;
-        stage.GoToStage(ref previewMat, ref targetRT);
-        
-        DrawSceneGUI();
+
+        SceneView.duringSceneGui += OnSceneGUI;
     }
 
     private void DisablePaintMode()
     {
-        CleanSceneGUI();
-        
-        StageUtility.GoBackToPreviousStage();
+        if(stage != null)
+        {
+            if(stage.isInStage)
+            {
+                StageUtility.GoBackToPreviousStage();
+            }
+        }
 
+        SceneView.duringSceneGui -= OnSceneGUI;
     }
 
-    private void DrawSceneGUI()
+    private void OnSceneGUI(SceneView sceneView)
     {
-        SceneView sceneview = SceneView.lastActiveSceneView;
-        var root = sceneview.rootVisualElement;
+        HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
         
-        paintToggleField = new ToolbarToggle()
-        {
-            text = "Paint"
-        };
-        paintToggleField.RegisterValueChangedCallback((e)=>
-        {
-            if(e.newValue)
-            {
-                StartPaint();
-            }
-            else
-            {
-                EndPaint();
-            }
-        });
-
-        root.Add(paintToggleField);
+        Get3DViewControlHandle();
     }
 
     private void CleanSceneGUI()
@@ -205,18 +227,18 @@ public class TexturePainter : EditorWindow
         root.Remove(paintToggleField);
     }
 
-    private void CameraControl(ref Camera cam, Rect rect, ref float scale)
+    private void InteractiveControl(ref Camera cam, Rect rect, ref float scale)
     {
         Vector2 panningDelta = Vector2.zero;
         Vector2 paintPos = Vector2.negativeInfinity;
-        GetControlHandle(rect, ref panningDelta, ref paintPos, ref scale);
+        Get2DViewControlHandle(rect, ref panningDelta, ref paintPos, ref scale);
         var camTransform = cam.transform;
         camTransform.position += -camTransform.right * panningDelta.x + camTransform.up * panningDelta.y;
     }
 
-    private void GetControlHandle(Rect rect, ref Vector2 panningDelta, ref Vector2 paintPos, ref float scale)
+    private void Get2DViewControlHandle(Rect rect, ref Vector2 panningDelta, ref Vector2 paintPos, ref float scale)
     {
-        var controlID = GUIUtility.GetControlID("TexturePainter 2DView Control".GetHashCode(), FocusType.Passive);
+        var controlID = GUIUtility.GetControlID("TexturePainter2DViewControl".GetHashCode(), FocusType.Passive);
         var e = Event.current;
         switch(e.GetTypeForControl(controlID))
         {
@@ -257,6 +279,27 @@ public class TexturePainter : EditorWindow
         }
     }
 
+    private void Get3DViewControlHandle()
+    {
+        Event e = Event.current;
+        if(e.button == 0 && e.type == EventType.MouseDrag)
+        {
+            Debug.Log("3DViewPaint");
+            Camera cam = SceneView.lastActiveSceneView.camera;
+            Vector3 mouseScreenPos = Event.current.mousePosition;
+            Ray ray = HandleUtility.GUIPointToWorldRay(mouseScreenPos);
+            Physics.Raycast(ray, out paintHit, 1000f);
+            if(paintHit.transform.gameObject == targetGameObject)
+            {
+                Vector3 hitNormal = paintHit.normal;
+                Vector3 hitPoint = paintHit.point;
+                CommandBuffer cb = new CommandBuffer();
+                cb.DrawMesh(targetMesh, Matrix4x4.identity, paintMat, 0, 0);
+                
+            }
+        }
+    }
+
     private Mesh GetPrimitiveMesh(PrimitiveType type)
     {
         GameObject gameObject = GameObject.CreatePrimitive(type);
@@ -266,13 +309,48 @@ public class TexturePainter : EditorWindow
         return mesh;
     }
 
-    private void StartPaint()
+    private void LoadBrushes()
     {
-        Debug.Log("Start Paint");
+        string[] path = AssetDatabase.FindAssets("t:script TexturePainter");
+        var thisScriptPath = AssetDatabase.GUIDToAssetPath(path[0]);
+        Debug.Log(thisScriptPath);
+        Debug.Log(thisScriptPath.Replace("TexturePainter.cs", "Brushes"));
+        var GUIDs = AssetDatabase.FindAssets("t:texture2D", new[]{thisScriptPath.Replace("/TexturePainter.cs", "/")});
+        Debug.Log(GUIDs);
+        ArrayList brushList = new ArrayList();
+        brushesTex = new Texture2D[GUIDs.Length];
+        Debug.Log(brushesTex[0]);
+        brushName = new string[GUIDs.Length];
+        for(int i = 0; i < GUIDs.Length; i++)
+        {
+            string brushTexPath = AssetDatabase.GUIDToAssetPath(GUIDs[i]);
+            string assetPath = GetAssetPath(brushTexPath);
+            Texture2D brush = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+            if(brush != null)
+            {
+                if(brush.width != brush.height && brush.width != 64)
+                {
+                    Debug.Log("Brush " + brush.name + " 的大小请改为 64！");
+                }
+                else
+                {
+                    brushList.Add(brush);
+                    brushName[i] = brush.ToString();
+
+                    TextureImporter ti = (TextureImporter)TextureImporter.GetAtPath(AssetDatabase.GetAssetPath(brush));
+                    ti.isReadable = true;
+                    AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(brush));
+                }
+            }
+        }
+        brushesTex = brushList.ToArray(typeof(Texture2D)) as Texture2D[];
     }
 
-    private void EndPaint()
+    private string GetAssetPath(string path)
     {
-        Debug.Log("End Paint");
+        int idx = path.IndexOf("Assets");
+        string assetPath = path.Substring(idx, path.Length - idx);
+        return assetPath;
     }
+
 }

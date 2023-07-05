@@ -8,7 +8,7 @@ using UnityEditor.SceneManagement;
 public class PreviewWindow : SceneView
 {
     public UnityEngine.Object selectedObj;
-    public Scene sceneLoaded;
+    // public Scene sceneLoaded;
  
     [MenuItem("Assets/Preview/Preview Asset")]
     public static void ShowWindow()
@@ -40,10 +40,8 @@ public class PreviewWindow : SceneView
         // Load a new preview scene
         scene = EditorSceneManager.NewPreviewScene();
      
-        window.sceneLoaded = scene;
-        window.sceneLoaded.name = window.name;
-        window.customScene = window.sceneLoaded;
- 
+        window.customScene = scene;
+        Debug.Log(window.customScene);
         window.drawGizmos = false;
  
         window.SetupScene();
@@ -80,7 +78,8 @@ public class PreviewWindow : SceneView
  
         // Create the object we're selecting
         GameObject obj = GameObject.Instantiate(selectedObj as GameObject);
- 
+        Debug.Log(obj);
+
         // Move the objects to the preview scene
         EditorSceneManager.MoveGameObjectToScene(obj, customScene);
         EditorSceneManager.MoveGameObjectToScene(lightingObj, customScene);
@@ -112,6 +111,6 @@ public class PreviewWindow : SceneView
  
     new void OnGUI()
     {
-        base.OnGUI();
+        base.OnSceneGUI();
     }
 }
